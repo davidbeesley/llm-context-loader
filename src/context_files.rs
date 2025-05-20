@@ -101,7 +101,7 @@ pub fn finalize_context_files(
     context_files: &[ContextFile],
     included_files_count: usize,
 ) -> Result<()> {
-    for file in context_files {
+    for (idx, file) in context_files.iter().enumerate() {
         let mut output = OpenOptions::new()
             .append(true)
             .open(&file.path)
@@ -110,10 +110,19 @@ pub fn finalize_context_files(
         writeln!(output, "\n\n===== END OF FILE COLLECTION =====\n")?;
         writeln!(output, "Total files included: {}", included_files_count)?;
         writeln!(output, "This is the complete source code for your review.")?;
+        
+        // Add pointer to the next file if this isn't the last file
+        if idx < context_files.len() - 1 {
+            writeln!(output, "\nIMPORTANT: continue reading the next context file at: {}", context_files[idx + 1].path.display())?;
+        } else {
         writeln!(
             output,
-            "Respond only with 'Ready' and await further instructions."
+            "You have now read all the files. Respond only with 'Ready' and await further instructions."
         )?;
+
+        }
+
+        
     }
 
     Ok(())

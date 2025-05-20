@@ -206,53 +206,24 @@ fn main() -> Result<()> {
         .map(|status| status.success())
         .unwrap_or(false);
 
-    // Ask to start Claude with instructions to read the context file (defaulting to Yes)
+    // Ask to start Claude with instructions to read the context files (defaulting to Yes)
     if claude_available && !all_context_files.is_empty() {
-        if all_context_files.len() > 1 {
-            print!("\nStart Claude with context files? [Y/n]: ");
-        } else {
-            print!("\nStart Claude with context file? [Y/n]: ");
-        }
+        print!("\nStart Claude with context files? [Y/n]: ");
         io::stdout().flush()?;
 
         let mut response = String::new();
         io::stdin().read_line(&mut response)?;
 
         if response.trim().to_lowercase() != "n" {
-            let file_to_use = if all_context_files.len() > 1 {
-                println!("\nNote: You will need to feed each context file to Claude separately.");
-                println!("\nAvailable context files:");
-                for (i, file) in all_context_files.iter().enumerate() {
-                    println!("  {}. {}", i + 1, file.path.display());
-                }
-
-                print!("\nWhich file to start with? [1]: ");
-                io::stdout().flush()?;
-
-                let mut choice = String::new();
-                io::stdin().read_line(&mut choice)?;
-
-                if choice.trim().is_empty() {
-                    0
-                } else {
-                    match choice.trim().parse::<usize>() {
-                        Ok(num) if num > 0 && num <= all_context_files.len() => num - 1,
-                        _ => {
-                            println!("Invalid choice, using first file.");
-                            0
-                        }
-                    }
-                }
-            } else {
-                0
-            };
-
-            info!("Starting Claude with context file {}...", file_to_use + 1);
-
-            // Start Claude with instructions to read the context file
+            // Create a list of all context file paths
+            let context_files_paths: Vec<_> = all_context_files.iter().map(|f| f.path.display().to_string()).collect();
+            
+            info!("Starting Claude with all context files...");
+            
+            // Start Claude with instructions to read all context files
             let message = format!(
-                "The context file is at {}. Read that file in its entirety, then say 'Ready'.",
-                all_context_files[file_to_use].path.display()
+                "The context files are at {}. Read the first each file in its entirety, then say 'Ready'.",
+                context_files_paths.join(", ")
             );
 
             match Command::new("claude")
@@ -273,22 +244,28 @@ fn main() -> Result<()> {
                         println!("  {}", file.path.display());
                     }
                     println!(
-                        "\nYou can try starting manually with: claude -d --verbose \"The context file is at {}. Read that file in its entirety, then say 'Ready'.\"",
-                        all_context_files[file_to_use].path.display()
+                        "\nYou can try starting manually with: claude -d --verbose \"The context files are at {}. Read the first file in its entirety, then say 'Ready'.\"",
+                        context_files_paths.join(", ")
                     );
                 }
             }
         } else {
+            // Create a list of all context file paths
+            let context_files_paths: Vec<_> = all_context_files.iter().map(|f| f.path.display().to_string()).collect();
+            
             println!("\nContext files are available at:");
             for file in &all_context_files {
                 println!("  {}", file.path.display());
             }
             println!(
-                "\nStart Claude manually with: claude -d --verbose \"The context file is at {}. Read that file in its entirety, then say 'Ready'.\"",
-                all_context_files[0].path.display()
+                "\nStart Claude manually with: claude -d --verbose \"The context files are at {}. Read the each file in its entirety, then say 'Ready'.\"",
+                context_files_paths.join(", ")
             );
         }
     } else {
+        // Create a list of all context file paths
+        let context_files_paths: Vec<_> = all_context_files.iter().map(|f| f.path.display().to_string()).collect();
+        
         println!("\nContext files are available at:");
         for file in &all_context_files {
             println!("  {}", file.path.display());
@@ -296,8 +273,8 @@ fn main() -> Result<()> {
 
         if claude_available {
             println!(
-                "\nStart Claude manually with: claude -d --verbose \"The context file is at {}. Read that file in its entirety, then say 'Ready'.\"",
-                all_context_files[0].path.display()
+                "\nStart Claude manually with: claude -d --verbose \"The context files are at {}. Read the first file in its entirety, then say 'Ready'.\"",
+                context_files_paths.join(", ")
             );
         } else {
             println!("\nClaude CLI not found. You can view the context files directly.");
