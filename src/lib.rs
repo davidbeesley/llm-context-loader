@@ -3,3 +3,4 @@ pub mod context_files;
 pub mod file_analysis;
 pub mod logging;
 pub mod processing;
+pub mod summary_cache;

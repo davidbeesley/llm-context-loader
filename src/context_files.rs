@@ -4,8 +4,12 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
+use std::env;
 
 use crate::file_analysis::CLAUDE_TOKEN_LIMIT;
+
+/// Name of the directory to store context files in
+pub const CONTEXT_DIR_NAME: &str = ".claude-context";
 
 /// Information about the current context file
 #[derive(Debug, Clone)]
@@ -94,6 +98,19 @@ pub fn append_to_file(path: &Path, content: &str) -> Result<()> {
     write!(file, "{}", content).context("Failed to write to file")?;
 
     Ok(())
+}
+
+/// Get the default directory for context files
+pub fn get_default_context_dir() -> Result<PathBuf> {
+    let current_dir = env::current_dir().context("Failed to get current working directory")?;
+    let context_dir = current_dir.join(CONTEXT_DIR_NAME);
+    
+    // Create the directory if it doesn't exist
+    if !context_dir.exists() {
+        fs::create_dir_all(&context_dir).context("Failed to create context directory")?;
+    }
+    
+    Ok(context_dir)
 }
 
 /// Finalize all context files
