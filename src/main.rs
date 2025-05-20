@@ -6,6 +6,7 @@ mod summary_cache;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use llm_context_loader::logging;
 use log::{error, info, warn};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
@@ -14,12 +15,12 @@ use std::process::Command;
 
 use crate::cache::{get_action_for_path, load_cache, save_cache, should_prompt_for_directory};
 use crate::context_files::{
-    ContextFile, append_to_file, create_context_file, finalize_context_files, get_default_context_dir,
-    get_or_rotate_file,
+    ContextFile, append_to_file, create_context_file, finalize_context_files,
+    get_default_context_dir, get_or_rotate_file,
 };
 use crate::file_analysis::{CLAUDE_TOKEN_LIMIT, analyze_directory, is_binary, show_dir_info};
 use crate::processing::{Action, apply_cached_actions, process_node};
-use crate::summary_cache::{load_summary_cache, save_summary_cache, SummaryCache};
+use crate::summary_cache::{SummaryCache, load_summary_cache, save_summary_cache};
 
 #[derive(Parser)]
 #[command(
@@ -47,15 +48,15 @@ struct Cli {
     /// Directory to store output files (default: .claude-context in current directory)
     #[arg(short, long)]
     output_dir: Option<PathBuf>,
-    
-    /// Always create context files in a subdirectory of current working directory
+
+    /// Create context files in a subdirectory of current working directory
     #[arg(long, default_value_t = true)]
     local_context: bool,
 }
 
 fn main() -> Result<()> {
     // Initialize logger
-    env_logger::init();
+    logging::debug();
 
     // Parse command line arguments
     let args = Cli::parse();
@@ -71,6 +72,10 @@ fn main() -> Result<()> {
         ".env".to_string(),
         "venv".to_string(),
         "target".to_string(),
+        ".claude-context".to_string(),
+        ".claude-summaries".to_string(),
+        ".claude_include".to_string(),
+        ".claude".to_string(),
     ];
     excludes.extend(args.exclude);
 
@@ -90,7 +95,7 @@ fn main() -> Result<()> {
 
     info!("Estimated total tokens: {}", total_tokens);
     info!("Estimated context files needed: {}", estimated_files);
-    
+
     // Determine the output directory
     let output_dir = if args.output_dir.is_some() {
         args.output_dir.clone()
@@ -99,11 +104,13 @@ fn main() -> Result<()> {
     } else {
         None
     };
-    
-    info!("Context files will be stored in: {}", 
-        output_dir.as_ref()
-            .map_or_else(|| "temporary directory".to_string(), 
-                        |p| p.display().to_string())
+
+    info!(
+        "Context files will be stored in: {}",
+        output_dir.as_ref().map_or_else(
+            || "temporary directory".to_string(),
+            |p| p.display().to_string()
+        )
     );
 
     // Create the first output file
@@ -120,14 +127,14 @@ fn main() -> Result<()> {
         load_cache(&start_dir)?
     };
     let use_cache = !cache.is_empty() && !args.no_cache;
-    
+
     // Initialize summary cache
     let mut summary_cache = if args.no_cache {
         SummaryCache::new()
     } else {
         load_summary_cache(&start_dir)?
     };
-    
+
     // Clean up orphaned summaries (files that no longer exist)
     if let Err(e) = summary_cache.cleanup(&start_dir) {
         warn!("Failed to clean up summary cache: {}", e);
@@ -186,10 +193,14 @@ fn main() -> Result<()> {
             let processed = result.processed;
             let included_files = result.included_files;
             all_context_files.extend(result.context_files.into_iter().skip(1)); // Skip first since it's already in the list
-            
+
             // Add any new summaries to the cache
             for summary_info in result.file_summaries {
-                summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                summary_cache.insert_summary(
+                    &summary_info.path,
+                    &summary_info.content_hash,
+                    summary_info.summary,
+                );
             }
 
             process_interactive_loop(
@@ -198,7 +209,7 @@ fn main() -> Result<()> {
                 &mut context_file,
                 args.max_tokens,
                 &mut cache,
-                &mut summary_cache, 
+                &mut summary_cache,
                 use_cache,
                 total_tokens,
                 processed,
@@ -262,10 +273,13 @@ fn main() -> Result<()> {
 
         if response.trim().to_lowercase() != "n" {
             // Create a list of all context file paths
-            let context_files_paths: Vec<_> = all_context_files.iter().map(|f| f.path.display().to_string()).collect();
-            
+            let context_files_paths: Vec<_> = all_context_files
+                .iter()
+                .map(|f| f.path.display().to_string())
+                .collect();
+
             info!("Starting Claude with all context files...");
-            
+
             // Start Claude with instructions to read all context files
             let message = format!(
                 "The context files are at {}. Read the first each file in its entirety, then say 'Ready'.",
@@ -297,8 +311,11 @@ fn main() -> Result<()> {
             }
         } else {
             // Create a list of all context file paths
-            let context_files_paths: Vec<_> = all_context_files.iter().map(|f| f.path.display().to_string()).collect();
-            
+            let context_files_paths: Vec<_> = all_context_files
+                .iter()
+                .map(|f| f.path.display().to_string())
+                .collect();
+
             println!("\nContext files are available at:");
             for file in &all_context_files {
                 println!("  {}", file.path.display());
@@ -310,8 +327,11 @@ fn main() -> Result<()> {
         }
     } else {
         // Create a list of all context file paths
-        let context_files_paths: Vec<_> = all_context_files.iter().map(|f| f.path.display().to_string()).collect();
-        
+        let context_files_paths: Vec<_> = all_context_files
+            .iter()
+            .map(|f| f.path.display().to_string())
+            .collect();
+
         println!("\nContext files are available at:");
         for file in &all_context_files {
             println!("  {}", file.path.display());
@@ -543,10 +563,14 @@ fn process_interactive_loop(
                     total_tokens = result.total_tokens;
                     processed = result.processed;
                     included_files = result.included_files;
-                    
+
                     // Add any new summaries to the cache
                     for summary_info in result.file_summaries {
-                        summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                        summary_cache.insert_summary(
+                            &summary_info.path,
+                            &summary_info.content_hash,
+                            summary_info.summary,
+                        );
                     }
 
                     // Add any new context files to our tracking list
@@ -578,10 +602,14 @@ fn process_interactive_loop(
                     total_tokens = result.total_tokens;
                     processed = result.processed;
                     included_files = result.included_files;
-                    
+
                     // Add any new summaries to the cache
                     for summary_info in result.file_summaries {
-                        summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                        summary_cache.insert_summary(
+                            &summary_info.path,
+                            &summary_info.content_hash,
+                            summary_info.summary,
+                        );
                     }
                 }
                 "3" => {
@@ -651,10 +679,14 @@ fn process_interactive_loop(
                     total_tokens = result.total_tokens;
                     processed = result.processed;
                     included_files = result.included_files;
-                    
+
                     // Add any new summaries to the cache
                     for summary_info in result.file_summaries {
-                        summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                        summary_cache.insert_summary(
+                            &summary_info.path,
+                            &summary_info.content_hash,
+                            summary_info.summary,
+                        );
                     }
 
                     // Add any new context files to our tracking list
@@ -686,10 +718,14 @@ fn process_interactive_loop(
                     total_tokens = result.total_tokens;
                     processed = result.processed;
                     included_files = result.included_files;
-                    
+
                     // Add any new summaries to the cache
                     for summary_info in result.file_summaries {
-                        summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                        summary_cache.insert_summary(
+                            &summary_info.path,
+                            &summary_info.content_hash,
+                            summary_info.summary,
+                        );
                     }
 
                     // Add any new context files to our tracking list
@@ -715,7 +751,7 @@ fn process_interactive_loop(
 
     // Save the cache files
     save_cache(&start_dir, cache)?;
-    
+
     // We need to do this outside the closure to avoid ownership issues
     save_summary_cache(&start_dir, summary_cache)?;
 
