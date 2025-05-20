@@ -171,7 +171,7 @@ fn main() -> Result<()> {
         if use_cache {
             // Apply cached actions first if needed
             info!("Applying actions from cache...");
-            let (total_tokens, processed, included_files, used_files) = apply_cached_actions(
+            let result = apply_cached_actions(
                 &dir_info,
                 &mut context_file,
                 args.max_tokens,
@@ -182,7 +182,10 @@ fn main() -> Result<()> {
                 Some(&summary_cache),
             )?;
 
-            all_context_files.extend(used_files.into_iter().skip(1)); // Skip first since it's already in the list
+            let total_tokens = result.total_tokens;
+            let processed = result.processed;
+            let included_files = result.included_files;
+            all_context_files.extend(result.context_files.into_iter().skip(1)); // Skip first since it's already in the list
 
             process_interactive_loop(
                 start_dir,
@@ -518,7 +521,7 @@ fn process_interactive_loop(
                     // Read
                     // Update cache
                     cache.insert(current.clone(), "read".to_string());
-                    let (new_total, new_processed, new_included, new_context_files) = process_node(
+                    let result = process_node(
                         &current,
                         &dir_info,
                         context_file,
@@ -532,12 +535,12 @@ fn process_interactive_loop(
                         output_dir,
                         Some(&*summary_cache),
                     )?;
-                    total_tokens = new_total;
-                    processed = new_processed;
-                    included_files = new_included;
+                    total_tokens = result.total_tokens;
+                    processed = result.processed;
+                    included_files = result.included_files;
 
                     // Add any new context files to our tracking list
-                    for file in new_context_files.into_iter().skip(1) {
+                    for file in result.context_files.into_iter().skip(1) {
                         // Skip first as it's the updated original
                         if !all_context_files.iter().any(|f| f.path == file.path) {
                             all_context_files.push(file);
@@ -548,7 +551,7 @@ fn process_interactive_loop(
                     // Exclude
                     // Update cache
                     cache.insert(current.clone(), "exclude".to_string());
-                    let (new_total, new_processed, new_included, _) = process_node(
+                    let result = process_node(
                         &current,
                         &dir_info,
                         context_file,
@@ -562,9 +565,9 @@ fn process_interactive_loop(
                         output_dir,
                         Some(&*summary_cache),
                     )?;
-                    total_tokens = new_total;
-                    processed = new_processed;
-                    included_files = new_included;
+                    total_tokens = result.total_tokens;
+                    processed = result.processed;
+                    included_files = result.included_files;
                 }
                 "3" => {
                     // Enter
@@ -616,7 +619,7 @@ fn process_interactive_loop(
                     // Summarize
                     // Update cache
                     cache.insert(current.clone(), "summarize".to_string());
-                    let (new_total, new_processed, new_included, new_context_files) = process_node(
+                    let result = process_node(
                         &current,
                         &dir_info,
                         context_file,
@@ -630,12 +633,12 @@ fn process_interactive_loop(
                         output_dir,
                         Some(&*summary_cache),
                     )?;
-                    total_tokens = new_total;
-                    processed = new_processed;
-                    included_files = new_included;
+                    total_tokens = result.total_tokens;
+                    processed = result.processed;
+                    included_files = result.included_files;
 
                     // Add any new context files to our tracking list
-                    for file in new_context_files.into_iter().skip(1) {
+                    for file in result.context_files.into_iter().skip(1) {
                         // Skip first as it's the updated original
                         if !all_context_files.iter().any(|f| f.path == file.path) {
                             all_context_files.push(file);
@@ -646,7 +649,7 @@ fn process_interactive_loop(
                     // Stats
                     // Update cache
                     cache.insert(current.clone(), "stats".to_string());
-                    let (new_total, new_processed, new_included, new_context_files) = process_node(
+                    let result = process_node(
                         &current,
                         &dir_info,
                         context_file,
@@ -660,12 +663,12 @@ fn process_interactive_loop(
                         output_dir,
                         Some(&*summary_cache),
                     )?;
-                    total_tokens = new_total;
-                    processed = new_processed;
-                    included_files = new_included;
+                    total_tokens = result.total_tokens;
+                    processed = result.processed;
+                    included_files = result.included_files;
 
                     // Add any new context files to our tracking list
-                    for file in new_context_files.into_iter().skip(1) {
+                    for file in result.context_files.into_iter().skip(1) {
                         // Skip first as it's the updated original
                         if !all_context_files.iter().any(|f| f.path == file.path) {
                             all_context_files.push(file);

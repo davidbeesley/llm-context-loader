@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use log::{info, warn};
 use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 /// Cache of file summaries
@@ -71,25 +73,22 @@ impl SummaryCache {
     }
 }
 
+/// Calculate a hash for any hashable value
+fn calculate_hash<T: Hash>(value: T) -> String {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
+}
+
 /// Calculate a hash for a file path
 fn hash_path(path: &Path) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
     let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    canonical_path.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    calculate_hash(canonical_path)
 }
 
 /// Calculate a hash for file content
 pub fn hash_content(content: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    calculate_hash(content)
 }
 
 /// Load summary cache from disk
