@@ -1,12 +1,11 @@
 use log::LevelFilter::Debug;
 use log::{Level, LevelFilter, Record, info, log_enabled};
-use std::env;
 use std::fmt::{Arguments, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
+use std::process;
 use std::sync::Once;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{fs, process};
 
 use ansi_colors::ColouredStr;
 use chrono::{DateTime, Utc};
@@ -16,7 +15,6 @@ use nohash_hasher::NoHashHasher;
 use serde::Serialize;
 use smallstr::SmallString;
 use std::fmt::Write as FmtWrite;
-use std::path::Path;
 use std::time::SystemTime;
 
 pub fn debug() {
@@ -206,7 +204,7 @@ impl Display for CoreLoggerRecord<'_> {
         // if crate_name.len() > MAX_CRATE_NAME_LEN {
         //     crate_name = &crate_name[0..MAX_CRATE_NAME_LEN];
         // }
-        let mut filename = self.file.split('/').last().unwrap_or("File_unknown");
+        let mut filename = self.file.split('/').next_back().unwrap_or("File_unknown");
         if filename.len() > MAX_FILENAME_LEN {
             filename = &filename[0..MAX_FILENAME_LEN];
         }
