@@ -9,7 +9,6 @@ use walkdir::WalkDir;
 
 // Token estimation constants
 pub const TOKENS_PER_BYTE: f64 = 0.3;
-pub const MAX_TOKENS: usize = 100000;
 pub const CLAUDE_TOKEN_LIMIT: usize = 20000;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

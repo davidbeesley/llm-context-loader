@@ -322,6 +322,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_interactive_loop(
     start_dir: PathBuf,
     dir_info: HashMap<PathBuf, file_analysis::DirInfo>,

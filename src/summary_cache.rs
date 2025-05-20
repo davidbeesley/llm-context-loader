@@ -3,7 +3,6 @@ use log::{info, warn};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use std::time::SystemTime;
 
 /// Cache of file summaries
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -40,23 +39,6 @@ impl SummaryCache {
         }
     }
 
-    /// Add a summary to the cache
-    pub fn add_summary(&mut self, file_path: &Path, content_hash: &str, summary: String) {
-        let path_hash = hash_path(file_path);
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        self.entries.insert(
-            path_hash,
-            SummaryEntry {
-                content_hash: content_hash.to_string(),
-                timestamp: now,
-                summary,
-            },
-        );
-    }
 
     /// Cleans up summaries that no longer exist in the filesystem
     /// This preserves all valid summaries regardless of age

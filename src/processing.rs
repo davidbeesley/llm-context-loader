@@ -7,8 +7,11 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
+// Define a more descriptive return type for functions that process nodes
+pub type NodeProcessingResult = (usize, HashSet<PathBuf>, HashSet<PathBuf>, Vec<ContextFile>);
+
 use crate::context_files::{ContextFile, append_to_file, get_or_rotate_file};
-use crate::file_analysis::{CLAUDE_TOKEN_LIMIT, DirectoryMap, FileInfo, is_binary};
+use crate::file_analysis::{CLAUDE_TOKEN_LIMIT, DirectoryMap, is_binary};
 use crate::summary_cache::{SummaryCache, hash_content};
 
 // Common code file extensions
@@ -26,7 +29,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "read" => Some(Action::Read),
             "exclude" => Some(Action::Exclude),
@@ -36,135 +39,16 @@ impl Action {
             _ => None,
         }
     }
-
-    pub fn to_str(&self) -> &'static str {
-        match self {
-            Action::Read => "read",
-            Action::Exclude => "exclude",
-            Action::Enter => "enter",
-            Action::Summarize => "summarize",
-            Action::Stats => "stats",
-        }
-    }
 }
 
-/// Process files for LLM
-pub fn process_files(
-    files: &[FileInfo],
-    context_file: &mut ContextFile,
-    max_tokens: usize,
-    summarize: bool,
-    total_files: usize,
-    base_dir: &Path,
-    output_dir: Option<&Path>,
-) -> Result<(usize, usize, Vec<ContextFile>)> {
-    let mut tokens_processed = 0;
-    let mut files_processed = 0;
-    let mut used_context_files = vec![context_file.clone()];
-    let mut current_context_file = context_file.clone();
+use std::str::FromStr;
 
-    let filtered_files: Vec<_> = files
-        .iter()
-        .filter(|f| !f.binary && f.tokens <= max_tokens)
-        .collect();
-    for file in &filtered_files {
-        let filepath = &file.path;
-        let rel_path = filepath
-            .strip_prefix(std::env::current_dir()?)
-            .unwrap_or(filepath);
-
-        if summarize {
-            // Check if adding this summary would exceed token limit
-            if current_context_file.current_tokens + (file.tokens / 4) > CLAUDE_TOKEN_LIMIT {
-                current_context_file =
-                    get_or_rotate_file(&current_context_file, total_files, base_dir, output_dir)?;
-                used_context_files.push(current_context_file.clone());
-            }
-
-            info!("Summarizing: {}", rel_path.display());
-
-            let content = format!("\n\n# Summary of {}\n", rel_path.display());
-            append_to_file(&current_context_file.path, &content)?;
-            current_context_file.current_tokens += content.len() / 4; // Rough estimate
-
-            let mut temp_file = NamedTempFile::new()?;
-            writeln!(temp_file, "Summarize this file concisely:\n\n")?;
-
-            // Read file content
-            match fs::read_to_string(filepath) {
-                Ok(content) => {
-                    // Add code formatting if it looks like code
-                    let ext = filepath.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    if CODE_EXTENSIONS.contains(&format!(".{}", ext).as_str()) {
-                        writeln!(temp_file, "```{}\n{}\n```\n", ext, content)?;
-                    } else {
-                        write!(temp_file, "{}", content)?;
-                    }
-                }
-                Err(e) => {
-                    writeln!(temp_file, "Error reading file: {}", e)?;
-                }
-            }
-
-            temp_file.flush()?;
-
-            // Run Claude if available (placeholder - in real code would check if claude is available)
-            let summary = "File summary would be generated here by claude if it were available.\n";
-            append_to_file(&current_context_file.path, summary)?;
-
-            // Update token counts (rough estimate)
-            let summary_tokens = file.tokens / 4;
-            tokens_processed += summary_tokens;
-            current_context_file.current_tokens += summary_tokens;
-            files_processed += 1;
-        } else {
-            // Check if adding this file would exceed token limit
-            if current_context_file.current_tokens + file.tokens > CLAUDE_TOKEN_LIMIT {
-                current_context_file =
-                    get_or_rotate_file(&current_context_file, total_files, base_dir, output_dir)?;
-                used_context_files.push(current_context_file.clone());
-            }
-
-            info!("Including: {}", rel_path.display());
-
-            let mut content = format!("\n\n===== FILE START: {} =====\n", rel_path.display());
-
-            // Add code formatting for common code extensions
-            let ext = filepath.extension().and_then(|e| e.to_str()).unwrap_or("");
-            let is_code = CODE_EXTENSIONS.contains(&format!(".{}", ext).as_str());
-
-            if is_code {
-                content.push_str(&format!("```{}\n", ext));
-            }
-
-            match fs::read_to_string(filepath) {
-                Ok(file_content) => {
-                    content.push_str(&file_content);
-                }
-                Err(e) => {
-                    content.push_str(&format!("Error reading file: {}\n", e));
-                }
-            }
-
-            if is_code {
-                content.push_str("\n```\n");
-            }
-
-            content.push_str(&format!("===== FILE END: {} =====\n", rel_path.display()));
-
-            append_to_file(&current_context_file.path, &content)?;
-
-            // Update token counts
-            tokens_processed += file.tokens;
-            current_context_file.current_tokens += file.tokens;
-            files_processed += 1;
-        }
+impl FromStr for Action {
+    type Err = &'static str;
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse_str(s).ok_or("Invalid action")
     }
-
-    // Update the original context file with the latest state
-    *context_file = current_context_file;
-
-    Ok((tokens_processed, files_processed, used_context_files))
 }
 
 /// Process directory contents based on action type
@@ -231,6 +115,7 @@ pub fn process_directory_content(
 }
 
 /// Process a single file based on the action
+#[allow(clippy::too_many_arguments)]
 fn process_file(
     path: &Path,
     context_file: &mut ContextFile,
@@ -242,7 +127,7 @@ fn process_file(
     base_dir: &Path,
     output_dir: Option<&Path>,
     summary_cache: Option<&SummaryCache>,
-) -> Result<(usize, HashSet<PathBuf>, HashSet<PathBuf>, Vec<ContextFile>)> {
+) -> Result<NodeProcessingResult> {
     let mut total_tokens = total_tokens;
     let mut included_files = included_files.clone();
     let mut processed = processed.clone();
@@ -409,11 +294,12 @@ fn process_file(
 }
 
 /// Process a node (file or directory) based on the chosen action
+#[allow(clippy::too_many_arguments)]
 pub fn process_node(
     path: &Path,
     dir_info: &DirectoryMap,
     context_file: &mut ContextFile,
-    max_tokens: usize,
+    _max_tokens: usize,
     total_tokens: usize,
     included_files: &HashSet<PathBuf>,
     processed: &HashSet<PathBuf>,
@@ -422,7 +308,7 @@ pub fn process_node(
     base_dir: &Path,
     output_dir: Option<&Path>,
     summary_cache: Option<&SummaryCache>,
-) -> Result<(usize, HashSet<PathBuf>, HashSet<PathBuf>, Vec<ContextFile>)> {
+) -> Result<NodeProcessingResult> {
     let mut total_tokens = total_tokens;
     let mut processed = processed.clone();
     let mut included_files = included_files.clone();
@@ -509,7 +395,7 @@ pub fn process_node(
                                     &file.path,
                                     dir_info,
                                     context_file,
-                                    max_tokens,
+                                    _max_tokens,
                                     total_tokens,
                                     &included_files,
                                     &processed,
@@ -534,7 +420,7 @@ pub fn process_node(
                                     subdir,
                                     dir_info,
                                     context_file,
-                                    max_tokens,
+                                    _max_tokens,
                                     total_tokens,
                                     &included_files,
                                     &processed,
@@ -595,16 +481,17 @@ pub fn process_node(
 }
 
 /// Apply actions from the cache to matching files
+#[allow(clippy::too_many_arguments)]
 pub fn apply_cached_actions(
     dir_info: &DirectoryMap,
     context_file: &mut ContextFile,
-    max_tokens: usize,
+    _max_tokens: usize,
     cache: &HashMap<PathBuf, String>,
     total_files: usize,
     base_dir: &Path,
     output_dir: Option<&Path>,
     summary_cache: Option<&SummaryCache>,
-) -> Result<(usize, HashSet<PathBuf>, HashSet<PathBuf>, Vec<ContextFile>)> {
+) -> Result<NodeProcessingResult> {
     let mut processed = HashSet::new();
     let mut included_files = HashSet::new();
     let mut total_tokens = 0;
@@ -632,7 +519,7 @@ pub fn apply_cached_actions(
         }
 
         if let Some(action_str) = cache.get(path) {
-            if let Some(action) = Action::from_str(action_str) {
+            if let Some(action) = Action::parse_str(action_str) {
                 info!(
                     "Applying cached action '{}' to {}",
                     action_str,
@@ -642,7 +529,7 @@ pub fn apply_cached_actions(
                     path,
                     dir_info,
                     context_file,
-                    max_tokens,
+                    _max_tokens,
                     total_tokens,
                     &included_files,
                     &processed,
