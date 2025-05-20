@@ -186,6 +186,11 @@ fn main() -> Result<()> {
             let processed = result.processed;
             let included_files = result.included_files;
             all_context_files.extend(result.context_files.into_iter().skip(1)); // Skip first since it's already in the list
+            
+            // Add any new summaries to the cache
+            for summary_info in result.file_summaries {
+                summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+            }
 
             process_interactive_loop(
                 start_dir,
@@ -533,11 +538,16 @@ fn process_interactive_loop(
                         total_files,
                         &start_dir,
                         output_dir,
-                        Some(&*summary_cache),
+                        Some(summary_cache),
                     )?;
                     total_tokens = result.total_tokens;
                     processed = result.processed;
                     included_files = result.included_files;
+                    
+                    // Add any new summaries to the cache
+                    for summary_info in result.file_summaries {
+                        summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                    }
 
                     // Add any new context files to our tracking list
                     for file in result.context_files.into_iter().skip(1) {
@@ -563,11 +573,16 @@ fn process_interactive_loop(
                         total_files,
                         &start_dir,
                         output_dir,
-                        Some(&*summary_cache),
+                        Some(summary_cache),
                     )?;
                     total_tokens = result.total_tokens;
                     processed = result.processed;
                     included_files = result.included_files;
+                    
+                    // Add any new summaries to the cache
+                    for summary_info in result.file_summaries {
+                        summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                    }
                 }
                 "3" => {
                     // Enter
@@ -631,11 +646,16 @@ fn process_interactive_loop(
                         total_files,
                         &start_dir,
                         output_dir,
-                        Some(&*summary_cache),
+                        Some(summary_cache),
                     )?;
                     total_tokens = result.total_tokens;
                     processed = result.processed;
                     included_files = result.included_files;
+                    
+                    // Add any new summaries to the cache
+                    for summary_info in result.file_summaries {
+                        summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                    }
 
                     // Add any new context files to our tracking list
                     for file in result.context_files.into_iter().skip(1) {
@@ -661,11 +681,16 @@ fn process_interactive_loop(
                         total_files,
                         &start_dir,
                         output_dir,
-                        Some(&*summary_cache),
+                        Some(summary_cache),
                     )?;
                     total_tokens = result.total_tokens;
                     processed = result.processed;
                     included_files = result.included_files;
+                    
+                    // Add any new summaries to the cache
+                    for summary_info in result.file_summaries {
+                        summary_cache.insert_summary(&summary_info.path, &summary_info.content_hash, summary_info.summary);
+                    }
 
                     // Add any new context files to our tracking list
                     for file in result.context_files.into_iter().skip(1) {

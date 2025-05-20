@@ -40,6 +40,20 @@ impl SummaryCache {
             _ => None,
         }
     }
+    
+    /// Insert a summary into the cache
+    pub fn insert_summary(&mut self, file_path: &Path, content_hash: &str, summary: String) {
+        let path_hash = hash_path(file_path);
+        let entry = SummaryEntry {
+            content_hash: content_hash.to_string(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            summary,
+        };
+        self.entries.insert(path_hash, entry);
+    }
 
 
     /// Cleans up summaries that no longer exist in the filesystem

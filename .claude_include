@@ -1,9 +1,9 @@
 {
-  "/home/dave/git/llm-context-loader/Cargo.lock": "exclude",
-  "/home/dave/git/llm-context-loader/.claude_include": "exclude",
   "/home/dave/git/llm-context-loader": "enter",
   "/home/dave/git/llm-context-loader/src": "read",
   "/home/dave/git/llm-context-loader/Cargo.toml": "read",
+  "/home/dave/git/llm-context-loader/.claude_include": "exclude",
   "/home/dave/git/llm-context-loader/.claude": "exclude",
-  "/home/dave/git/llm-context-loader/LICENSE": "exclude"
+  "/home/dave/git/llm-context-loader/LICENSE": "exclude",
+  "/home/dave/git/llm-context-loader/Cargo.lock": "exclude"
 }
