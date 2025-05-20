@@ -18,7 +18,6 @@ use smallstr::SmallString;
 use std::fmt::Write as FmtWrite;
 use std::path::Path;
 use std::time::SystemTime;
-use stdio_override::{StderrOverride, StderrOverrideGuard, StdoutOverride, StdoutOverrideGuard};
 
 pub fn debug() {
     CoreLogger::init_with_filter(Debug);
@@ -285,71 +284,6 @@ fn write_single_line(f: &mut Formatter, line: &str) -> core::fmt::Result {
         width = max_width - WRAPPED.len();
     }
     write!(f, "{}", line)
-}
-
-pub fn init_log_file() -> (StdoutOverrideGuard, StderrOverrideGuard) {
-    let start_time: DateTime<Utc> = SystemTime::now().into();
-    let start_time = start_time.format("%Y_%m_%d__%T%.3fz");
-    let cwd = env::current_dir()
-        .expect("Failed to get current dir")
-        .file_name()
-        .expect("Should not fail")
-        .to_str()
-        .expect("Convert failed")
-        .to_string();
-    let mut log_dir = dirs::home_dir().expect("Home directory not found");
-    log_dir.push(".core_logs");
-    log_dir.push(Path::new(&cwd));
-    let executable_path = std::env::current_exe().expect("get path to current executable");
-    log_dir.push(
-        Path::new(&executable_path)
-            .file_name()
-            .expect("Should not fail"),
-    );
-    let mut log_file = log_dir.clone();
-    log_file.push(format!("{}.txt", start_time));
-    let mut sym_link = log_dir.clone();
-    sym_link.push("last.txt");
-    println!("Logging to {}", log_file.display());
-    fs::create_dir_all(log_dir).expect("Failed to ensure log dir");
-
-    let stdout_guard =
-        StdoutOverride::override_file(log_file.clone()).expect("Failed to override stdout");
-    let stderr_guard =
-        StderrOverride::override_file(log_file.clone()).expect("Failed to override stderr");
-    println!("Begin log {}", log_file.display());
-    match std::os::unix::fs::symlink(log_file.clone(), sym_link.clone()) {
-        Ok(_) => {
-            println!(
-                "Updated symlink {} -> {}",
-                sym_link.display(),
-                log_file.display()
-            );
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            match fs::remove_file(sym_link.clone()) {
-                Ok(_) => {
-                    std::os::unix::fs::symlink(log_file.clone(), sym_link.clone())
-                        .expect("Unable to update symlink");
-                    println!(
-                        "Updated symlink {} -> {}",
-                        sym_link.display(),
-                        log_file.display()
-                    );
-                }
-                Err(_) => {
-                    println!(
-                        "Unable to update {}. Check if open elsewhere",
-                        sym_link.display()
-                    )
-                }
-            }
-        }
-        Err(e) => {
-            println!("Unable to update {} due to {e:?}", sym_link.display())
-        }
-    }
-    (stdout_guard, stderr_guard)
 }
 
 #[cfg(test)]
