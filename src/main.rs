@@ -1,16 +1,19 @@
-mod logging;
 mod config;
+mod logging;
+mod lsp_client;
+#[cfg(test)]
+mod test_lsp;
 
+use crate::config::Config;
 use anyhow::Result;
 use log::{debug, info};
-use rmcp::{tool, ServerHandler, ServiceExt, schemars};
 use rmcp::model::{ServerCapabilities, ServerInfo};
+use rmcp::{ServerHandler, ServiceExt, schemars, tool};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::config::Config;
 
 #[derive(Debug, Clone)]
 struct LlmContextLoader {
@@ -73,7 +76,8 @@ impl LlmContextLoader {
         json!({
             "summary": format!("Summary for file: {}", req.file_path),
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Get a summary of a module or directory")]
@@ -82,7 +86,8 @@ impl LlmContextLoader {
         json!({
             "summary": format!("Summary for module: {}", req.module_path),
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Search for symbols in the codebase")]
@@ -92,7 +97,8 @@ impl LlmContextLoader {
             "symbols": [],
             "query": req.query,
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Get detailed information about a specific symbol")]
@@ -101,7 +107,8 @@ impl LlmContextLoader {
         json!({
             "info": format!("Information for symbol: {}", req.symbol_name),
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Get documentation for a Rust crate")]
@@ -110,7 +117,8 @@ impl LlmContextLoader {
         json!({
             "docs": format!("Documentation for crate: {}", req.crate_name),
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "List the project structure")]
@@ -121,7 +129,8 @@ impl LlmContextLoader {
             "structure": [],
             "root": root_path,
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Get project dependencies")]
@@ -130,7 +139,8 @@ impl LlmContextLoader {
         json!({
             "dependencies": [],
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Get the current summarization prompt")]
@@ -140,7 +150,8 @@ impl LlmContextLoader {
         json!({
             "prompt": config.default_summarization_prompt,
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Set a custom summarization prompt")]
@@ -152,7 +163,8 @@ impl LlmContextLoader {
             "success": true,
             "prompt": req.prompt,
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Reset the summarization prompt to default")]
@@ -165,7 +177,8 @@ impl LlmContextLoader {
             "success": true,
             "prompt": default_prompt,
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 
     #[tool(description = "Regenerate a summary for a file or module")]
@@ -174,7 +187,8 @@ impl LlmContextLoader {
         json!({
             "summary": format!("Regenerated summary for: {}", req.target),
             "status": "success"
-        }).to_string()
+        })
+        .to_string()
     }
 }
 
@@ -183,14 +197,14 @@ impl ServerHandler for LlmContextLoader {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: rmcp::model::ProtocolVersion::LATEST,
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: rmcp::model::Implementation {
                 name: "llm-context-loader".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
             },
-            instructions: Some("LLM Context Loader - provides tools for loading and analyzing code context".into()),
+            instructions: Some(
+                "LLM Context Loader - provides tools for loading and analyzing code context".into(),
+            ),
         }
     }
 }
@@ -199,12 +213,15 @@ impl ServerHandler for LlmContextLoader {
 async fn main() -> Result<()> {
     // Initialize logging - MCP requires minimal logging
     logging::debug();
-    
+
     debug!("Starting LLM Context Loader MCP Server");
-    
+
     // Load configuration from environment
     let config = Config::from_env()?;
-    info!("Loaded configuration: max_file_size={}", config.max_file_size);
+    info!(
+        "Loaded configuration: max_file_size={}",
+        config.max_file_size
+    );
 
     // Create the service
     let service = LlmContextLoader {
@@ -215,13 +232,13 @@ async fn main() -> Result<()> {
     let transport = rmcp::transport::stdio();
 
     info!("MCP server listening on stdio");
-    
+
     // Serve the service with the transport
     let server = service.serve(transport).await?;
-    
+
     // Wait for the server to complete
     let quit_reason = server.waiting().await?;
     info!("Server shut down: {:?}", quit_reason);
-    
+
     Ok(())
 }

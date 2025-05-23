@@ -25,3 +25,5 @@ smallstr = "0.3.0"
 rmcp = { version = "0.1.5", features = ["server", "transport-io"] }
 tokio = { version = "1.35", features = ["full"] }
 env_logger = "0.11"
+lsp-types = "0.97"
+url = "2.5.4"

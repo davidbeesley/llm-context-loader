@@ -21,6 +21,7 @@ pub fn debug() {
     CoreLogger::init_with_filter(Debug);
 }
 
+#[allow(dead_code)]
 pub fn info() {
     CoreLogger::init_with_filter(log::LevelFilter::Info);
 }
@@ -55,6 +56,7 @@ const PREFIX_LEN: usize = MAX_FILENAME_LEN + 54;
 const WRAPPED: &str = "    ->    ";
 
 impl CoreLogger {
+    #[allow(dead_code)]
     pub fn init() {
         CoreLogger::init_with_filter(Debug);
     }
