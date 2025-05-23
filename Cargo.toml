@@ -27,3 +27,8 @@ tokio = { version = "1.35", features = ["full"] }
 env_logger = "0.11"
 lsp-types = "0.97"
 url = "2.5.4"
+syn = { version = "2.0", features = ["full", "parsing"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+sha2 = "0.10"
+rusqlite = { version = "0.31", features = ["bundled"] }

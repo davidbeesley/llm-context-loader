@@ -1,8 +1,14 @@
+mod cache;
 mod config;
 mod logging;
 mod lsp_client;
+mod parser;
+#[cfg(test)]
+mod parser_test;
 #[cfg(test)]
 mod test_lsp;
+#[cfg(test)]
+mod test_retry;
 
 use crate::config::Config;
 use anyhow::Result;

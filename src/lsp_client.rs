@@ -21,15 +21,78 @@ pub struct RustAnalyzerClient {
     project_root: PathBuf,
 }
 
+/// Wrapper that can restart the LSP client if it crashes
+pub struct RestartableRustAnalyzerClient {
+    client: Option<RustAnalyzerClient>,
+    project_root: PathBuf,
+}
+
+impl RestartableRustAnalyzerClient {
+    pub fn new(project_root: PathBuf) -> Result<Self> {
+        let client = RustAnalyzerClient::new(project_root.clone())?;
+        Ok(Self {
+            client: Some(client),
+            project_root,
+        })
+    }
+
+    /// Get a mutable reference to the client, restarting if necessary
+    pub fn get_or_restart(&mut self) -> Result<&mut RustAnalyzerClient> {
+        // Check if we have a client and if it's healthy
+        let needs_restart = match &mut self.client {
+            Some(client) => !client.is_healthy(),
+            None => true,
+        };
+
+        if needs_restart {
+            eprintln!("Restarting rust-analyzer...");
+            // Drop the old client
+            self.client = None;
+            // Create a new one
+            let new_client = RustAnalyzerClient::new(self.project_root.clone())?;
+            self.client = Some(new_client);
+
+            // Initialize the new client
+            if let Some(client) = &self.client {
+                client.initialize()?;
+            }
+        }
+
+        self.client
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get client"))
+    }
+}
+
 impl RustAnalyzerClient {
     /// Create a new client and start rust-analyzer
     pub fn new(project_root: PathBuf) -> Result<Self> {
-        let mut process = Command::new("rust-analyzer")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .context("Failed to start rust-analyzer. Is it installed?")?;
+        // Try to start rust-analyzer with a simple retry
+        let mut attempts = 0;
+        let max_attempts = 3;
+
+        let mut process =
+            loop {
+                attempts += 1;
+                match Command::new("rust-analyzer")
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .spawn()
+                {
+                    Ok(p) => break p,
+                    Err(e) if attempts < max_attempts => {
+                        eprintln!(
+                            "Failed to start rust-analyzer (attempt {}/{}): {}",
+                            attempts, max_attempts, e
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    Err(e) => return Err(e).context(
+                        "Failed to start rust-analyzer after multiple attempts. Is it installed?",
+                    ),
+                }
+            };
 
         let stdin = process
             .stdin
@@ -50,6 +113,21 @@ impl RustAnalyzerClient {
             writer,
             project_root,
         })
+    }
+
+    /// Check if the rust-analyzer process is still running
+    pub fn is_healthy(&mut self) -> bool {
+        match self.process.try_wait() {
+            Ok(None) => true, // Process is still running
+            Ok(Some(status)) => {
+                eprintln!("rust-analyzer exited with status: {}", status);
+                false
+            }
+            Err(e) => {
+                eprintln!("Error checking rust-analyzer status: {}", e);
+                false
+            }
+        }
     }
 
     /// Initialize the LSP connection
@@ -90,7 +168,23 @@ impl RustAnalyzerClient {
             work_done_progress_params: Default::default(),
         };
 
-        let response = self.send_request("initialize", params)?;
+        // Simple retry for initialization
+        let mut attempts = 0;
+        let max_attempts = 3;
+
+        let response = loop {
+            attempts += 1;
+            match self.send_request("initialize", params.clone()) {
+                Ok(res) => break res,
+                Err(e) if attempts < max_attempts => {
+                    eprintln!("Initialize attempt {} failed: {}", attempts, e);
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+                Err(e) => {
+                    return Err(e).context("Failed to initialize LSP after multiple attempts");
+                }
+            }
+        };
 
         // Send initialized notification
         self.send_notification("initialized", InitializedParams {})?;
@@ -274,11 +368,14 @@ impl RustAnalyzerClient {
                 if let Some(params) = message.get("params") {
                     if let (Some(token), Some(value)) = (params.get("token"), params.get("value")) {
                         if let Some(message_text) = value.get("message").and_then(|m| m.as_str()) {
-                            println!("[Progress] {}: {}", 
+                            println!(
+                                "[Progress] {}: {}",
                                 token.as_str().unwrap_or("unknown"),
                                 message_text
                             );
-                            if let Some(percentage) = value.get("percentage").and_then(|p| p.as_u64()) {
+                            if let Some(percentage) =
+                                value.get("percentage").and_then(|p| p.as_u64())
+                            {
                                 println!("  {}% complete", percentage);
                             }
                         }
@@ -291,9 +388,12 @@ impl RustAnalyzerClient {
     }
 
     /// Get document symbols
-    pub fn document_symbols(&self, file_path: &PathBuf) -> Result<Option<lsp_types::DocumentSymbolResponse>> {
-        let uri = Url::from_file_path(file_path)
-            .map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+    pub fn document_symbols(
+        &self,
+        file_path: &PathBuf,
+    ) -> Result<Option<lsp_types::DocumentSymbolResponse>> {
+        let uri =
+            Url::from_file_path(file_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
 
         let params = lsp_types::DocumentSymbolParams {
             text_document: TextDocumentIdentifier {
@@ -311,9 +411,9 @@ impl RustAnalyzerClient {
     pub fn wait_for_ready(&self, file_path: &PathBuf, max_wait_secs: u64) -> Result<()> {
         let start = std::time::Instant::now();
         let max_duration = std::time::Duration::from_secs(max_wait_secs);
-        
+
         println!("Waiting for rust-analyzer to analyze the file...");
-        
+
         loop {
             // Try to get document symbols
             if let Ok(Some(symbols)) = self.document_symbols(file_path) {
@@ -329,11 +429,13 @@ impl RustAnalyzerClient {
                     _ => {}
                 }
             }
-            
+
             if start.elapsed() > max_duration {
-                return Err(anyhow::anyhow!("Timeout waiting for rust-analyzer to be ready"));
+                return Err(anyhow::anyhow!(
+                    "Timeout waiting for rust-analyzer to be ready"
+                ));
             }
-            
+
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }
