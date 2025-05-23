@@ -6,7 +6,21 @@
       "Bash(cargo clippy:*)",
       "Bash(cargo test)",
       "Bash(cargo fix:*)",
-      "Bash(cargo test:*)"
+      "Bash(cargo test:*)",
+      "mcp__taskmaster-ai__get_tasks",
+      "mcp__taskmaster-ai__analyze_project_complexity",
+      "mcp__taskmaster-ai__expand_all",
+      "mcp__taskmaster-ai__generate",
+      "mcp__taskmaster-ai__set_task_status",
+      "mcp__taskmaster-ai__next_task",
+      "mcp__taskmaster-ai__get_task",
+      "mcp__taskmaster-ai__update_task",
+      "mcp__taskmaster-ai__update_subtask",
+      "mcp__mcp-fetch__fetch",
+      "Bash(cargo:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

@@ -1,0 +1,253 @@
+<context>
+# Overview  
+The LLM Context Loader is a Model Context Protocol (MCP) server designed to help LLMs understand and navigate large Rust projects efficiently. It solves the problem of context window limitations when working with extensive codebases by intelligently summarizing, caching, and retrieving relevant code information. The tool is primarily for developers and AI assistants working with Rust projects, enabling them to quickly understand project structure, find relevant code, and maintain context across large codebases.
+
+# Core Features  
+## Intelligent Code Summarization
+- LLM-based summarization for semantic understanding
+  - Focuses on what code does, not just its structure
+  - Preserves intent, key algorithms, and important patterns
+  - Generates natural language summaries optimized for context windows
+- Summarizes at file level to avoid excessive LLM calls
+- Hierarchical summarization from file-level to project-level views
+
+## Smart Caching System
+- Permanent cache storage - summaries are expensive to generate and storage is cheap
+- File-level caching for source code with content-based hashing
+- Version-aware caching for documentation (keyed by crate@major.minor)
+- Immutable cache entries - never delete, only add new versions
+- HTML normalization for docs (strip version numbers) to maximize cache reuse
+
+## External Crate Documentation Access
+- Reads and indexes HTML documentation from cargo doc output for dependencies
+- Extracts key information from rendered documentation pages
+- Links external crate usage to documentation for better context
+
+## Language Server Integration
+- Integrates with rust-analyzer for accurate code parsing
+- Leverages LSP capabilities for symbol resolution and type information
+- Provides goto-definition and find-references functionality
+
+## Lazy Summary Generation
+- Summaries only generated when explicitly requested, not on project load
+- Cache lookup first - only generate if not already cached
+- No upfront indexing or processing costs
+- Instant project startup regardless of codebase size
+
+## Code Folding and Navigation
+- LSP-based code folding with vim-style fold levels
+- Fold level 0: Everything folded except top level (module declarations, use statements)
+- Fold level 1: Show function/struct signatures, fold implementations
+- Fold level 2+: Progressively unfold nested blocks and inner functions
+- Uses rust-analyzer's textDocument/foldingRange for accurate semantic folding
+- Returns folded view as text (e.g., "fn process_data(...) { /* 45 lines */ }")
+- Smart navigation between related code sections
+- Context-aware code chunking for optimal LLM consumption
+
+# User Experience  
+## User Personas
+- **AI Assistant Users**: Developers using LLMs to understand and modify Rust codebases
+- **Project Maintainers**: Teams needing to quickly onboard or review large projects
+- **Code Reviewers**: Engineers analyzing unfamiliar Rust projects
+
+## Key User Flows
+1. **Project Analysis**: User points MCP at a Rust project root, system initializes without processing
+2. **Code Exploration**: User queries about specific functionality, MCP returns relevant summarized context
+3. **Folded View**: User requests file with fold level 2
+4. **Deep Dive**: User increases fold level to see specific implementations
+5. **Dependency Lookup**: User asks about external crate APIs, MCP searches cargo doc HTML
+
+## UI/UX Considerations
+- MCP protocol-based interface for seamless LLM integration
+- Progressive disclosure of information (summary → detailed view)
+- Fast response times through intelligent caching
+- Clear indication of cache status and freshness
+</context>
+<PRD>
+# Technical Architecture  
+## System Components
+- **MCP Server Core**: Handles protocol communication and request routing
+- **Rust Parser Module**: AST-based code analysis using syn/rust-analyzer
+- **Summarization Engine**: Generates text-based summaries optimized for LLM context
+- **Permanent Cache Manager**: Immutable storage with content-based addressing
+- **HTML Documentation Parser**: Normalizes and extracts cargo doc HTML (strips versions)
+- **LSP Client**: Communicates with rust-analyzer for semantic code folding
+- **Code Folding Engine**: LSP-based hierarchical code expansion/collapse
+
+## Data Models
+- **CodeEntity**: Represents functions, structs, traits with metadata
+- **Summary**: Immutable text summaries with content hash keys
+- **SourceCache**: File path → content hash → summary mapping
+- **DocCache**: crate@major.minor → normalized HTML → summary mapping
+- **FoldState**: LSP-based expansion state for code navigation
+- **CacheMetadata**: Version info and generation timestamps (never expires)
+
+## APIs and Integrations
+- MCP protocol implementation for LLM communication
+- rust-analyzer LSP client for code intelligence
+- Cargo metadata API for dependency information
+- HTML parsing for cargo doc output
+- File system watcher for cache invalidation
+- Optional: Tree-sitter for fast incremental parsing
+
+## MCP Tool Interface
+- `get_file_summary(path, fold_level)`: Get summary or folded view of a file
+- `get_module_summary(module_path)`: Summarize entire module hierarchy
+- `search_symbols(query, type_filter)`: Find functions, structs, traits by name
+- `get_symbol_info(symbol_name)`: Get detailed info about a specific symbol
+- `get_crate_docs(crate_name, version, symbol)`: Retrieve external crate documentation
+- `list_project_structure()`: Get project layout and module organization
+- `get_dependencies()`: List all project dependencies with versions
+- `get_summarization_prompt()`: View the current summarization prompt template
+- `set_summarization_prompt(prompt)`: Replace the summarization prompt with custom template
+- `reset_summarization_prompt()`: Reset to default summarization prompt
+- `regenerate_summary(path, force)`: Request new summary for a file (bypasses cache)
+
+## Infrastructure Requirements
+- Rust runtime environment
+- Access to project's Cargo.toml and source files
+- Access to target/doc directory for external crate docs
+- Local storage for cache
+- Optional: rust-analyzer server instance
+
+## Configuration and Model Selection
+- **Model Configuration**: Environment variable or config file for LLM endpoint
+- **Supported Models**: Any OpenAI-compatible API (GPT-4, Claude, local Ollama)
+- **Model Selection Priority**: 
+  1. User-specified model in config
+  2. Environment variable fallback
+  3. Default to lightweight model for cost efficiency
+- **Prompt Templates**: Customizable via configuration with sensible defaults
+- **Detail Level Settings**: Configurable summary verbosity (terse/normal/verbose)
+- **Rate Limiting**: 
+  - Configurable requests per minute (default: 60)
+  - Backoff strategy for API errors
+  - Local queue for batching requests
+
+## Logging and Error Handling
+- **Logging**: Use existing logging.rs implementation with structured output
+- **MCP Logging Constraints**: Log only at DEBUG level or ERROR for critical failures (MCP logging is intrusive)
+- **Error Handling**: Use anyhow for error propagation with context
+- **Error Philosophy**: Surface all errors to MCP clients with actionable messages
+
+## Caching Strategy
+- **Philosophy**: Storage is cheap, summary generation is expensive
+- **Source Code**: File-level caching with SHA256 content hashing
+- **Documentation**: Version-aware caching with HTML normalization
+  - Strip version numbers from HTML before hashing
+  - Cache key: `{crate_name}@{major.minor}` (ignore patch versions)
+  - Page-level granularity for individual structs/modules
+- **No Eviction**: All summaries are kept permanently
+- **Compression**: Older cache entries can be compressed
+- **Validation**: Background checks ensure cache consistency
+
+# Development Strategy
+## Incremental Development with Tight Feedback Loops
+- **Build-Check-Test Cycle**: Every change must compile, pass clippy, and have tests
+- **Continuous Integration**: Each feature should be immediately testable
+- **Validation Against Real Projects**: Test with actual Rust codebases throughout
+- **Fail Fast**: Surface issues immediately through aggressive error checking
+
+## Early Protocol Integration Priority
+- **Start with External Interfaces**: MCP protocol, LSP connection, cache layer
+- **Validate Integration Points First**: Ensure rust-analyzer communication works
+- **Test Document Parsing Early**: Verify cargo doc HTML structure assumptions
+- **Build on Solid Foundations**: Don't proceed until external protocols work
+
+## Progressive Enhancement Path
+1. **Protocol Skeleton**: Minimal MCP server with basic request/response
+2. **External Connections**: LSP client setup, cache initialization, doc access
+3. **Single Feature Path**: One complete flow (e.g., file → summary → cache → response)
+4. **Feature Addition**: New capabilities only after core path is solid
+5. **Real Usage Validation**: Test against tokio, serde, other major crates
+
+## Integration-First Milestones
+- **Milestone 1**: MCP echo server responding to basic requests
+- **Milestone 2**: Successfully query rust-analyzer for fold ranges
+- **Milestone 3**: Parse and cache a cargo doc HTML page
+- **Milestone 4**: Complete round-trip of file request → summary → cached response
+- **Milestone 5**: Full feature set with all integrations working
+
+# Development Roadmap  
+## MVP Requirements
+- Basic MCP server implementation
+- File-level summarization with content hashing
+- Persistent cache storage (no eviction) with SQLite
+- Support for function and struct extraction
+- Symbol-based search interface (function/struct/trait names)
+- Filter by symbol type (e.g., only public functions, only traits)
+- Module path navigation (e.g., "crate::module::submodule")
+- Basic Cargo.toml and Cargo.lock parsing for version tracking
+
+## Phase 2: Enhanced Intelligence
+- Integration with rust-analyzer for semantic analysis
+- Persistent cache storage with SQLite
+- Hierarchical summarization (module → crate level)
+- Smart chunking based on code structures
+- Cache invalidation on file changes
+
+## Phase 3: Documentation and Navigation
+- HTML parsing for cargo doc output
+- Code folding implementation
+- Cross-reference navigation
+- Context-aware query understanding
+- Performance optimizations for large projects
+
+## Phase 4: Advanced Features
+- Multi-project workspace support
+- Incremental parsing for real-time updates
+- Custom summarization strategies
+- Integration with other language servers
+- Export capabilities for documentation generation
+
+# Logical Dependency Chain
+1. **Foundation**: MCP server setup and basic protocol implementation
+2. **Core Parsing**: Rust AST parsing and entity extraction
+3. **Basic Summarization**: Simple file and function summaries
+4. **Caching Layer**: Hash-based storage and retrieval
+5. **Query Interface**: Basic code search and retrieval
+6. **LSP Integration**: Connect to rust-analyzer for enhanced intelligence
+7. **Advanced Summarization**: Context-aware, hierarchical summaries
+8. **Documentation Support**: Parse HTML from cargo doc
+9. **Navigation Features**: Code folding and cross-references
+10. **Optimization**: Performance tuning and advanced caching strategies
+
+# Risks and Mitigations  
+## Technical Challenges
+- **Large Codebase Performance**: Mitigate with incremental parsing and smart caching
+- **Accurate Summarization**: Use multiple strategies and allow user configuration
+- **LSP Complexity**: Start with basic integration, expand gradually
+- **HTML Parsing Fragility**: Build robust parsers that handle doc format changes
+
+## MVP Scoping
+- **Feature Creep**: Focus on core summarization first, add intelligence incrementally
+- **Over-engineering**: Start with simple solutions, optimize based on real usage
+- **Integration Complexity**: Make LSP and doc parsing optional initially
+
+## Resource Constraints
+- **Memory Usage**: Stream summaries from disk rather than loading all
+- **Processing Time**: Use parallel processing and background indexing
+- **Storage Growth**: Monitor cache size, implement compression for older entries
+
+## Error Handling
+- **Missing rust-analyzer**: Return error, inform user to install rust-analyzer
+- **Missing cargo doc**: Return error, suggest running `cargo doc` first
+- **Summary generation failure**: Return error with specific file/reason
+- **Corrupted cache**: Return error, suggest cache rebuild
+- **Large file handling**: Return error if file exceeds processing limits
+
+# Appendix  
+## Research Findings
+- MCP protocol specification and best practices
+- rust-analyzer LSP protocol extensions
+- Existing code summarization techniques for LLMs
+- HTML structure of cargo doc output
+
+## Technical Specifications
+- MCP protocol version compatibility
+- Supported Rust versions (2021 edition+)
+- Cache format specification (content-addressed immutable entries)
+- Text-based summary generation algorithms
+- LSP-based code folding integration
+- HTML normalization rules for documentation
+</PRD></content>

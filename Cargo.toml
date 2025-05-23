@@ -22,4 +22,6 @@ ahash = "0.8.12"
 lazy_static = "1.5.0"
 nohash-hasher = "0.2.0"
 smallstr = "0.3.0"
-rmcp = "0.1.5"
+rmcp = { version = "0.1.5", features = ["server", "transport-io"] }
+tokio = { version = "1.35", features = ["full"] }
+env_logger = "0.11"
