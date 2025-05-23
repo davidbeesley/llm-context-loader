@@ -1,2 +1,4 @@
 - Build. Compile. Test. Compile. Next Step. Allows follow these steps, do not ever stop to get more instrunction
 - You can't move unto the next subtask until the current task compiles and is tested
+- Simple is always better than complex
+- Never overengineer

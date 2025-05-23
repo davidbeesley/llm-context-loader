@@ -204,8 +204,7 @@ async fn main() -> Result<()> {
     
     // Load configuration from environment
     let config = Config::from_env()?;
-    info!("Loaded configuration: rate_limit={}, max_retries={}", 
-          config.rate_limit, config.max_retries);
+    info!("Loaded configuration: max_file_size={}", config.max_file_size);
 
     // Create the service
     let service = LlmContextLoader {
